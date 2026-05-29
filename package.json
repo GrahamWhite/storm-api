@@ -1,0 +1,34 @@
+{
+  "name": "storm-api",
+  "version": "1.0.0",
+  "description": "Storm API Backend",
+  "homepage": "#",
+  "bugs": {
+    "url": "https://shackntheback.ca"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GrahamWhite/storm-api.git"
+  },
+  "license": "ISC",
+  "author": "Graham White",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.0.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mysql2": "^3.14.3",
+    "nodemailer": "^7.0.5",
+    "validator": "^13.15.15",
+    "xss": "^1.0.15"
+  }
+}
