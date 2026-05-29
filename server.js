@@ -89,7 +89,7 @@ app.post('/api/register', authLimiter, async (req, res) => {
   }
 
   try {
-    const [rows] = await pool.execute('SELECT email FROM user WHERE email = ?', [username]);
+    const [rows] = await pool.execute('SELECT email FROM users WHERE email = ?', [username]);
     if (rows.length > 0) {
       return res.status(409).json({ error: 'User already exists' });
     }
@@ -100,7 +100,7 @@ app.post('/api/register', authLimiter, async (req, res) => {
     const verificationToken = crypto.randomBytes(32).toString('hex');
 
     await pool.execute(
-      'INSERT INTO user (email, password_hash, verification_token, verified) VALUES (?, ?, ?, 0)',
+      'INSERT INTO users (email, password_hash, verification_token, verified) VALUES (?, ?, ?, 0)',
       [username, hashedPassword, verificationToken]
     );
 
@@ -133,7 +133,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
 
   try {
     const [rows] = await pool.execute(
-      'SELECT email, password_hash, role, verified FROM user WHERE email = ?',
+      'SELECT email, password_hash, role, verified FROM users WHERE email = ?',
       [username]
     );
 
@@ -171,7 +171,7 @@ app.get('/api/verify/:token', async (req, res) => {
 
   try {
     const [rows] = await pool.execute(
-      'SELECT email FROM user WHERE verification_token = ?',
+      'SELECT email FROM users WHERE verification_token = ?',
       [token]
     );
 
