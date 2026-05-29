@@ -17,9 +17,9 @@ const PORT = process.env.PORT || 4000;
 // --- MySQL connection pool ---
 const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'moss',
+  user: process.env.DB_USER || 'admin',
   password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'moss_database',
+  database: process.env.DB_NAME || 'default_database',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
@@ -44,7 +44,7 @@ const allowedOrigins = [
   'https://flumpy.ca',
   'https://www.flumpy.ca',
   'http://localhost:3000',
-  'http://192.168.68.55:3000'
+  'http://192.168.68.56:3000'
 ];
 
 app.use(cors({
