@@ -41,10 +41,12 @@ const authLimiter = rateLimit({
 });
 
 const allowedOrigins = [
+  'http://shackntheback.ca:80',
   'http://localhost:3000',
   'http://localhost:5173',
   'http://192.168.68.56:5173',
-  'http://192.168.68.56:3000'
+  'http://192.168.68.56:3000',
+  'http://192.168.68.56:80'
 ];
 
 app.use(cors({
@@ -68,6 +70,33 @@ function validateCredentials(email, password) {
   return true;
 }
 
+
+//Upload Configuration for forum attachments (admin only)
+
+const fs = require("fs");
+
+if (!fs.existsSync("./uploads")) {
+  fs.mkdirSync("./uploads");
+}
+
+if (!fs.existsSync("./uploads/forum")) {
+  fs.mkdirSync("./uploads/forum");
+}
+
+
+
+const multer = require("multer");
+
+const storage = multer.diskStorage({
+  destination: "./uploads/forum",
+  filename: (req,file,cb) => {
+    cb(null, Date.now() + "-" + file.originalname);
+  }
+});
+
+
+
+
 // --- Gmail SMTP Transporter ---
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -76,6 +105,9 @@ const transporter = nodemailer.createTransport({
     pass: process.env.SMTP_PASS  // Gmail App Password
   }
 });
+
+
+const upload = multer({ storage });
 
 function verifyAdmin(req) {
   const authHeader = req.headers['authorization'] || '';
@@ -95,6 +127,23 @@ function verifyAdmin(req) {
   }
 
   return decoded;
+}
+
+
+function verifyToken(req, res, next) {
+  const authHeader = req.headers.authorization || "";
+  const token = authHeader.split(" ")[1];
+
+  if (!token) {
+    return res.status(401).json({ error: "No token provided" });
+  }
+
+  try {
+    req.user = jwt.verify(token, process.env.JWT_SECRET);
+    next();
+  } catch {
+    return res.status(401).json({ error: "Invalid token" });
+  }
 }
 
 // --- REGISTER (with email verification) ---
@@ -127,7 +176,7 @@ app.post('/api/register', authLimiter, async (req, res) => {
       [username, hashedPassword, verificationToken]
     );
 
-    const verifyLink = `${process.env.FRONTEND_URL}/verify/${verificationToken}`;
+    const verifyLink = `${process.env.FRONTEND_URL}:${process.env.PORT}/api/verify/${verificationToken}`;
     await transporter.sendMail({
       from: `"API Email Verification" <${process.env.SMTP_USER}>`,
       to: username,
@@ -289,7 +338,310 @@ app.delete('/api/users/:id', async (req, res) => {
   }
 });
 
+//Get current user info (requires valid JWT)
+app.get("/api/me", verifyToken, async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT user_id,email,role,verified
+       FROM users
+       WHERE email = ?`,
+      [req.user.email]
+    );
 
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+app.get(
+  "/api/dashboard",
+  verifyToken,
+  async (req,res) => {
+
+    const [forums] =
+      await pool.execute(
+        "SELECT COUNT(*) count FROM forum_topics"
+      );
+
+    const [photos] =
+      await pool.execute(
+        "SELECT COUNT(*) count FROM uploads"
+      );
+
+    const [notifications] =
+      await pool.execute(
+        `
+        SELECT COUNT(*) count
+        FROM notifications
+        WHERE user_id =
+        (
+          SELECT user_id
+          FROM users
+          WHERE email=?
+        )
+        `,
+        [req.user.email]
+      );
+
+    res.json({
+      topics: forums[0].count,
+      photos: photos[0].count,
+      notifications:
+        notifications[0].count
+    });
+  }
+);
+
+
+
+
+//Forum Endpoints (protected, requires valid JWT)
+app.get("/api/forums", async (req, res) => {
+  const [rows] = await pool.execute(
+    "SELECT * FROM forums ORDER BY title"
+  );
+
+  res.json(rows);
+});
+
+
+//Create new forum (admin only)
+app.post("/api/forums", async (req, res) => {
+  try {
+    verifyAdmin(req);
+
+    const { title, description } = req.body;
+
+    await pool.execute(
+      `INSERT INTO forums(title,description)
+       VALUES (?,?)`,
+      [title, description]
+    );
+
+    res.json({ message: "Forum created" });
+  } catch (err) {
+    res.status(403).json({ error: err.message });
+  }
+});
+
+//Create new topic in forum (requires valid JWT)
+app.post("/api/topics", verifyToken, async (req, res) => {
+  try {
+    const { forum_id, title } = req.body;
+
+    const [user] = await pool.execute(
+      "SELECT user_id FROM users WHERE email=?",
+      [req.user.email]
+    );
+
+    await pool.execute(
+      `INSERT INTO forum_topics
+       (forum_id,user_id,title)
+       VALUES (?,?,?)`,
+      [
+        forum_id,
+        user[0].user_id,
+        title
+      ]
+    );
+
+    res.json({ message: "Topic created" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+//Get all topics in forum (requires valid JWT)
+app.get("/api/forums/:id/topics", async (req, res) => {
+  const [rows] = await pool.execute(
+    `
+    SELECT
+      t.*,
+      u.email
+    FROM forum_topics t
+    JOIN users u ON t.user_id = u.user_id
+    WHERE forum_id = ?
+    ORDER BY pinned DESC, created_at DESC
+    `,
+    [req.params.id]
+  );
+
+  res.json(rows);
+});
+
+
+app.get("/api/topics/:id", async (req,res) => {
+
+  const [rows] = await pool.execute(
+    `
+    SELECT
+      t.*,
+      u.email
+    FROM forum_topics t
+    JOIN users u
+      ON u.user_id = t.user_id
+    WHERE t.id = ?
+    `,
+    [req.params.id]
+  );
+
+  if (!rows.length) {
+    return res.status(404).json({
+      error: "Topic not found"
+    });
+  }
+
+  res.json(rows[0]);
+});
+
+//Create new post in topic (requires valid JWT)
+app.post("/api/posts", verifyToken, async (req, res) => {
+  try {
+    const { topic_id, message } = req.body;
+
+    const [user] = await pool.execute(
+      "SELECT user_id FROM users WHERE email=?",
+      [req.user.email]
+    );
+
+    await pool.execute(
+      `
+      INSERT INTO forum_posts
+      (topic_id,user_id,message)
+      VALUES (?,?,?)
+      `,
+      [
+        topic_id,
+        user[0].user_id,
+        xss(message)
+      ]
+    );
+
+    res.json({ message: "Post created" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete(
+  "/api/posts/:id",
+  async (req,res) => {
+
+    try {
+
+      verifyAdmin(req);
+
+      await pool.execute(
+        "DELETE FROM forum_posts WHERE id=?",
+        [req.params.id]
+      );
+
+      res.json({
+        message:"Post deleted"
+      });
+
+    } catch(err) {
+
+      res.status(403).json({
+        error: err.message
+      });
+
+    }
+
+  }
+);
+
+//Get all posts in topic (requires valid JWT)
+app.get("/api/topics/:id/posts", async (req, res) => {
+  const [rows] = await pool.execute(
+    `
+    SELECT
+      p.*,
+      u.email
+    FROM forum_posts p
+    JOIN users u
+      ON p.user_id = u.user_id
+    WHERE topic_id = ?
+    ORDER BY created_at ASC
+    `,
+    [req.params.id]
+  );
+
+  res.json(rows);
+});
+
+//Upload image for forum post (requires valid JWT)
+app.post(
+  "/api/upload",
+  verifyToken,
+  upload.single("image"),
+  async (req,res) => {
+
+    const [user] = await pool.execute(
+      "SELECT user_id FROM users WHERE email=?",
+      [req.user.email]
+    );
+
+    await pool.execute(
+      `
+      INSERT INTO uploads
+      (user_id,filename)
+      VALUES (?,?)
+      `,
+      [
+        user[0].user_id,
+        req.file.filename
+      ]
+    );
+
+    res.json({
+      filename: req.file.filename
+    });
+  }
+);
+
+
+//get all uploaded images 
+app.get("/api/gallery", async (req,res) => {
+
+  const [rows] = await pool.execute(
+    `
+    SELECT *
+    FROM uploads
+    ORDER BY uploaded_at DESC
+    `
+  );
+
+  res.json(rows);
+});
+
+
+app.get(
+  "/api/notifications",
+  verifyToken,
+  async (req,res) => {
+
+    const [user] = await pool.execute(
+      "SELECT user_id FROM users WHERE email=?",
+      [req.user.email]
+    );
+
+    const [rows] = await pool.execute(
+      `
+      SELECT *
+      FROM notifications
+      WHERE user_id = ?
+      ORDER BY created_at DESC
+      `,
+      [user[0].user_id]
+    );
+
+    res.json(rows);
+  }
+);
 
 
 

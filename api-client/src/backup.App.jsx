@@ -312,8 +312,36 @@ const uploadImage = async (file) => {
           <div style={card}>
             <h2>Dashboard</h2>
 
+            {/* CREATE USER (ADMIN) */}
+            <div style={card}>
+              <h3>Create User</h3>
+
+              <input
+                style={input}
+                placeholder="email"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+              />
+
+              <input
+                style={input}
+                placeholder="password"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
+
+              <button style={button} onClick={createUser}>
+                Create User
+              </button>
+            </div>
+
             <button style={button} onClick={getUsers}>
               Load Users
+            </button>
+
+            <button style={dangerBtn} onClick={logout}>
+              Logout
             </button>
           </div>
 
@@ -426,117 +454,50 @@ const uploadImage = async (file) => {
           </button>
 
         </div>
+{activePage === "forums" && (
 
-        <div style={{ display: "flex", height: "80vh", gap: 10 }}>
+<div style={card}>
 
-          {activePage === "forums" && (
+  <h2>Forums</h2>
 
-          <div style={card}>
+  <button
+    style={button}
+    onClick={loadForums}
+  >
+    Load Forums
+  </button>
 
-            <h2>Forums</h2>
+  {forums.map(f => (
 
-            <button
-              style={button}
-              onClick={loadForums}
-            >
-              Load Forums
-            </button>
+    <div
+      key={f.id}
+      style={{
+        padding:10,
+        marginTop:10,
+        background:"#0b1220"
+      }}
+    >
 
-            {forums.map(f => (
+      <h3>{f.title}</h3>
 
-              <div
-                key={f.id}
-                style={{
-                  padding:10,
-                  marginTop:10,
-                  background:"#0b1220"
-                }}
-              >
+      <p>{f.description}</p>
 
-                <h3>{f.title}</h3>
+      <button
+        style={button}
+        onClick={() =>
+          loadTopics(f.id)
+        }
+      >
+        Open
+      </button>
 
-                <p>{f.description}</p>
+    </div>
 
-                <button
-                  style={button}
-                  onClick={() =>
-                    loadTopics(f.id)
-                  }
-                >
-                  Open
-                </button>
+  ))}
 
-              </div>
+</div>
 
-            ))}
-
-          </div>
-
-          )}
-
-
-          <div style={{ width: 250, background: "#0f172a", borderRadius: 10, padding: 10 }}>
-                    <h3>Topics</h3>
-
-                    {!selectedForum && (
-                      <p style={{ opacity: 0.6 }}>Select a forum</p>
-                    )}
-
-                    {topics.map(t => (
-                      <div
-                        key={t.id}
-                        onClick={() => {
-                          setSelectedTopic(t.id);
-                          setPosts([]);
-                          loadPosts(t.id);
-                        }}
-                        style={{
-                          padding: 10,
-                          marginTop: 8,
-                          background: selectedTopic === t.id ? "#22c55e" : "#0b1220",
-                          borderRadius: 8,
-                          cursor: "pointer"
-                        }}
-                      >
-                        # {t.title}
-                      </div>
-                    ))}
-                </div>
-
-
-
-
-          <div style={{ flex: 1, background: "#111827", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column" }}>
-  
-            <h3>Posts</h3>
-
-            {!selectedTopic && (
-              <p style={{ opacity: 0.6 }}>Select a topic</p>
-            )}
-
-            {/* messages */}
-            <div style={{ flex: 1, overflowY: "auto", padding: 10 }}>
-              {posts.map(p => (
-                <div
-                  key={p.id}
-                  style={{
-                    marginBottom: 10,
-                    padding: 10,
-                    background: "#0b1220",
-                    borderRadius: 10
-                  }}
-                >
-                  <div style={{ fontSize: 12, opacity: 0.7 }}>{p.email}</div>
-                  <div>{p.message}</div>
-                </div>
-              ))}
-            </div>
-
-          </div>
-
-        </div>
-
-       
+)}
 
 {topics.map(t => (
 
