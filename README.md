@@ -35,9 +35,11 @@ GRANT ALL PRIVILEGES ON moss.* TO 'admin'@'localhost';
 FLUSH PRIVILEGES;
 EXIT;
 
+Create Tables with Admin User:
+
 mysql -u admin -p <YOUR_PASSWORD_HERE>
 
-CREATE TABLE user (
+CREATE TABLE users (
     user_id INT AUTO_INCREMENT PRIMARY KEY,
     email VARCHAR(255) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
@@ -47,7 +49,7 @@ CREATE TABLE user (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE meeting (
+<!-- CREATE TABLE meeting (
     meeting_id INT AUTO_INCREMENT PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
     start_time DATETIME NOT NULL,
@@ -65,7 +67,7 @@ CREATE TABLE user_meeting (
     PRIMARY KEY (user_id, meeting_id),
     FOREIGN KEY (user_id) REFERENCES user(user_id) ON DELETE CASCADE,
     FOREIGN KEY (meeting_id) REFERENCES meeting(meeting_id) ON DELETE CASCADE
-);
+); -->
 
 
 

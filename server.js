@@ -81,6 +81,9 @@ const transporter = nodemailer.createTransport({
 app.post('/api/register', authLimiter, async (req, res) => {
   let { username, password } = req.body;
 
+  //For debugging purposes only, remove in production
+  console.log(req.body);
+
   username = validator.normalizeEmail(username || '');
   password = xss(password || '');
 
@@ -106,9 +109,9 @@ app.post('/api/register', authLimiter, async (req, res) => {
 
     const verifyLink = `${process.env.FRONTEND_URL}/verify/${verificationToken}`;
     await transporter.sendMail({
-      from: `"Moss" <${process.env.SMTP_USER}>`,
+      from: `"API Email Verification" <${process.env.SMTP_USER}>`,
       to: username,
-      subject: 'Verify your email - Moss',
+      subject: 'Verify your email - Shack N\' The Back Development Studios',
       html: `<p>Please click the link below to verify your email:</p>
              <a href="${verifyLink}">${verifyLink}</a>`
     });
@@ -159,6 +162,8 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     );
 
     res.json({ message: 'Login successful', token, role: userRole });
+
+    console.log(`User logged in: ${username} with role ${userRole}. JWT: ${token}`);
   } catch (err) {
     console.error('Login error:', err.message);
     res.status(500).json({ error: 'Server error' });
@@ -180,7 +185,7 @@ app.get('/api/verify/:token', async (req, res) => {
     }
 
     await pool.execute(
-      'UPDATE user SET verified = 1, verification_token = NULL WHERE verification_token = ?',
+      'UPDATE users SET verified = 1, verification_token = NULL WHERE verification_token = ?',
       [token]
     );
 
@@ -203,6 +208,40 @@ app.get('/api/protected', (req, res) => {
 
     res.json({ message: 'Protected content accessed', user: decoded });
   });
+});
+
+
+app.get('/api/users', async (req, res) => {
+  try {
+    const authHeader = req.headers['authorization'] || '';
+    const token = authHeader.split(' ')[1];
+
+    if (!token) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+
+    // 🔐 ROLE CHECK
+    if (decoded.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const [rows] = await pool.execute(
+      `SELECT user_id, email, role, verified, created_at FROM users`
+    );
+
+    res.json(rows);
+
+  } catch (err) {
+    console.error('Get users error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 
