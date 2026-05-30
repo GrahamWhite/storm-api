@@ -1,92 +1,149 @@
-# storm-api
-An API Configuration for Linux, Nginx, SQL, NodeJS Stack
+# 🛠️ API Stack Installation Guide
+## Linux + Nginx + MySQL + Node.js
 
+This guide sets up a full backend stack including:
+- MySQL database
+- Node.js API server
+- PM2 process manager
+- Vite frontend client
 
+---
 
-SQL Database Installation:
+# 🗄️ 1. MySQL Installation
 
-sudo apt install mysql-server -y
-sudo systemctl enable mysql
-sudo systemctl start mysql
-sudo systemctl status mysql
+    sudo apt update
+    sudo apt install mysql-server -y
 
-sudo mysql_secure_installation
+    sudo systemctl enable mysql
+    sudo systemctl start mysql
+    sudo systemctl status mysql
 
-Recommended:
+---
 
-Set root password → YES
-Remove anonymous users → YES
-Disable remote root login → YES
-Remove test database → YES
+## 🔐 Secure MySQL Setup
 
+    sudo mysql_secure_installation
 
+Recommended answers:
 
-sudo mysql
+- Set root password → YES  
+- Remove anonymous users → YES  
+- Disable remote root login → YES  
+- Remove test database → YES  
 
-Create Database with Root:
+---
 
-mysql -u root -p
+# 🧱 2. Create Database & User
 
+Login as root:
 
-CREATE DATABASE default_database;
+    sudo mysql
 
-CREATE USER 'admin'@'localhost' IDENTIFIED BY 'YOUR_PASSWORD_HERE';
-GRANT ALL PRIVILEGES ON moss.* TO 'admin'@'localhost';
-FLUSH PRIVILEGES;
-EXIT;
+### Create database:
 
-Create Tables with Admin User:
+    CREATE DATABASE default_database;
 
-mysql -u admin -p <YOUR_PASSWORD_HERE>
+---
 
-CREATE TABLE users (
-    user_id INT AUTO_INCREMENT PRIMARY KEY,
-    email VARCHAR(255) NOT NULL UNIQUE,
-    password_hash VARCHAR(255) NOT NULL,
-    role VARCHAR(50) DEFAULT 'user',
-    verified TINYINT(1) DEFAULT 0,
-    verification_token VARCHAR(255),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+### Create admin user:
 
-<!-- CREATE TABLE meeting (
-    meeting_id INT AUTO_INCREMENT PRIMARY KEY,
-    title VARCHAR(255) NOT NULL,
-    start_time DATETIME NOT NULL,
-    info TEXT,
-    location VARCHAR(255),
-    picture_url TEXT,
-    latitude DECIMAL(10,8),
-    longitude DECIMAL(11,8),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+    CREATE USER 'admin'@'localhost' IDENTIFIED BY 'YOUR_PASSWORD_HERE';
 
-CREATE TABLE user_meeting (
-    user_id INT NOT NULL,
-    meeting_id INT NOT NULL,
-    PRIMARY KEY (user_id, meeting_id),
-    FOREIGN KEY (user_id) REFERENCES user(user_id) ON DELETE CASCADE,
-    FOREIGN KEY (meeting_id) REFERENCES meeting(meeting_id) ON DELETE CASCADE
-); -->
+---
 
+### Grant permissions:
 
+    GRANT ALL PRIVILEGES ON default_database.* TO 'admin'@'localhost';
+    FLUSH PRIVILEGES;
+    EXIT;
 
-Generate Strong JWT Secret
-openssl rand -hex 32
+---
 
-Set up auto-restart
-npm install -g pm2
-pm2 start server.js --name moss-api
-pm2 save
-pm2 startup
+# 📊 3. Create Users Table
 
+Login as admin:
 
+    mysql -u admin -p
 
+Then run:
 
-//CLIENT INSTALLATION 
+    USE default_database;
 
-npm create vite@latest api-client
-cd api-client
-npm install
-npm install axios
-npm run dev
+    CREATE TABLE users (
+        user_id INT AUTO_INCREMENT PRIMARY KEY,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        password_hash VARCHAR(255) NOT NULL,
+        role VARCHAR(50) DEFAULT 'user',
+        verified TINYINT(1) DEFAULT 0,
+        verification_token VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+---
+
+# 🔐 4. Generate JWT Secret
+
+    openssl rand -hex 32
+
+Copy output into .env:
+
+    JWT_SECRET=your_generated_secret_here
+
+---
+
+# 🚀 5. Install PM2 (Process Manager)
+
+    npm install -g pm2
+
+Start server:
+
+    pm2 start server.js --name moss-api
+
+Save process:
+
+    pm2 save
+
+Enable startup on reboot:
+
+    pm2 startup
+
+---
+
+# 🌐 6. Frontend Client Setup (Vite + React)
+
+    npm create vite@latest api-client
+    cd api-client
+    npm install
+    npm install axios
+    npm run dev
+
+---
+
+# ⚡ 7. Recommended Environment Variables
+
+Create .env in backend:
+
+    PORT=3001
+
+    DB_HOST=localhost
+    DB_USER=admin
+    DB_PASSWORD=YOUR_PASSWORD_HERE
+    DB_NAME=default_database
+
+    JWT_SECRET=your_secret_here
+
+    SMTP_USER=your_email@gmail.com
+    SMTP_PASS=your_app_password
+
+    FRONTEND_URL=http://localhost:5173
+
+---
+
+# 🔥 Done
+
+Your stack is now running:
+
+- MySQL database
+- Node.js API backend (PM2)
+- React frontend (Vite)
+- JWT authentication system
