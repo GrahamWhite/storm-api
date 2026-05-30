@@ -32,7 +32,14 @@ async function initDB() {
 initDB();
 
 // --- Security Middleware ---
-app.use(helmet());
+app.use(
+  helmet({
+    crossOriginResourcePolicy: false,
+  })
+);
+
+
+app.use("/uploads", express.static("uploads"));
 
 const authLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
@@ -503,48 +510,54 @@ app.get("/api/topics/:id", async (req,res) => {
   res.json(rows[0]);
 });
 
-//Create new post in topic (requires valid JWT)
-app.post("/api/posts", verifyToken, async (req, res) => {
-  try {
-    const { topic_id, message } = req.body;
 
-    if (!topic_id || !message) {
-      return res.status(400).json({ error: "Missing topic or message" });
+
+
+//Upload image for forum post (requires valid JWT)
+app.post(
+  "/api/posts/upload",
+  verifyToken,
+  upload.array("images", 10), // 👈 MULTIPLE FILES (max 10)
+  async (req, res) => {
+    try {
+      const { topic_id, message } = req.body;
+
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ error: "No files uploaded" });
+      }
+
+      const [userRows] = await pool.execute(
+        "SELECT user_id FROM users WHERE email=?",
+        [req.user.email]
+      );
+
+      const userId = userRows[0].user_id;
+
+      // 1. create post
+      const [result] = await pool.execute(
+        `INSERT INTO forum_posts (topic_id, user_id, message)
+         VALUES (?, ?, ?)`,
+        [topic_id, userId, xss(message)]
+      );
+
+      const postId = result.insertId;
+
+      // 2. insert ALL images
+      for (const file of req.files) {
+        await pool.execute(
+          `INSERT INTO forum_post_images (post_id, filename)
+           VALUES (?, ?)`,
+          [postId, file.filename]
+        );
+      }
+
+      res.json({ message: "Post created with images" });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
-
-    // ✅ get auth user first
-    const authUser = req.user;
-
-    const [rows] = await pool.execute(
-      "SELECT user_id FROM users WHERE email=?",
-      [authUser.email]
-    );
-
-    if (!rows.length) {
-      return res.status(401).json({ error: "User not found" });
-    }
-
-    const userId = rows[0].user_id;
-
-    await pool.execute(
-      `
-      INSERT INTO forum_posts (topic_id, user_id, message)
-      VALUES (?, ?, ?)
-      `,
-      [
-        topic_id,
-        userId,
-        xss(message)
-      ]
-    );
-
-    res.json({ message: "Post created" });
-
-  } catch (err) {
-    console.error("POST ERROR:", err);
-    res.status(500).json({ error: err.message });
   }
-});
+);
 
 app.delete("/api/posts/:id", verifyToken, async (req, res) => {
   try {
@@ -589,13 +602,41 @@ app.delete("/api/posts/:id", verifyToken, async (req, res) => {
   }
 });
 
+// Upload images for a post
+app.post(
+  "/api/posts/:id/images",
+  verifyToken,
+  upload.array("images", 10),
+  async (req, res) => {
+    const postId = req.params.id;
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: "No images uploaded" });
+    }
+
+    const values = req.files.map(f => [
+      postId,
+      f.filename
+    ]);
+
+    await pool.query(
+      `
+      INSERT INTO forum_post_images (post_id, filename)
+      VALUES ?
+      `,
+      [values]
+    );
+
+    res.json({ message: "Images uploaded" });
+  }
+);
+
+
 //Get all posts in topic (requires valid JWT)
 app.get("/api/topics/:id/posts", async (req, res) => {
-  const [rows] = await pool.execute(
+  const [posts] = await pool.execute(
     `
-    SELECT
-      p.*,
-      u.email
+    SELECT p.*, u.email
     FROM forum_posts p
     LEFT JOIN users u ON p.user_id = u.user_id
     WHERE p.topic_id = ?
@@ -604,7 +645,16 @@ app.get("/api/topics/:id/posts", async (req, res) => {
     [req.params.id]
   );
 
-  res.json(rows);
+  for (let post of posts) {
+    const [images] = await pool.execute(
+      `SELECT filename FROM forum_post_images WHERE post_id = ?`,
+      [post.id]
+    );
+
+    post.images = images;
+  }
+
+  res.json(posts);
 });
 
 //Delete topic and all its posts (admin only)
@@ -657,35 +707,37 @@ app.post(
   "/api/upload",
   verifyToken,
   upload.single("image"),
-  async (req,res) => {
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
 
-    if (!user.length) {
-      return res.status(401).json({ error: "User not found" });
+      const [userRows] = await pool.execute(
+        "SELECT user_id FROM users WHERE email=?",
+        [req.user.email]
+      );
+
+      if (!userRows.length) {
+        return res.status(401).json({ error: "User not found" });
+      }
+
+      await pool.execute(
+        `
+        INSERT INTO uploads (user_id, filename)
+        VALUES (?, ?)
+        `,
+        [userRows[0].user_id, req.file.filename]
+      );
+
+      res.json({ filename: req.file.filename });
+
+    } catch (err) {
+      console.error("UPLOAD ERROR:", err);
+      res.status(500).json({ error: err.message });
     }
-    const [user] = await pool.execute(
-      "SELECT user_id FROM users WHERE email=?",
-      [req.user.email]
-    );
-
-    await pool.execute(
-      `
-      INSERT INTO uploads
-      (user_id,filename)
-      VALUES (?,?)
-      `,
-      [
-        user[0].user_id,
-        req.file.filename
-      ]
-    );
-
-    res.json({
-      filename: req.file.filename
-    });
   }
 );
-
-
 //get all uploaded images 
 app.get("/api/gallery", async (req,res) => {
 
