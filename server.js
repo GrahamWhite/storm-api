@@ -41,8 +41,6 @@ const authLimiter = rateLimit({
 });
 
 const allowedOrigins = [
-  'https://flumpy.ca',
-  'https://www.flumpy.ca',
   'http://localhost:3000',
   'http://localhost:5173',
   'http://192.168.68.56:5173',
@@ -211,6 +209,8 @@ app.get('/api/verify/:token', async (req, res) => {
       [token]
     );
 
+    console.log(`Email verified for: ${rows[0].email}`);
+
     res.json({ message: 'Email verified successfully, you can now log in.' });
   } catch (err) {
     console.error('Verification error:', err.message);
@@ -260,6 +260,8 @@ app.put('/api/users/:id', async (req, res) => {
       [role, verified, id]
     );
 
+    console.log(`User updated: ID ${id}, Role: ${role}, Verified: ${verified}`);
+
     res.json({ message: 'User updated' });
   } catch (err) {
     res.status(403).json({ error: err.message });
@@ -272,12 +274,14 @@ app.delete('/api/users/:id', async (req, res) => {
   try {
     verifyAdmin(req);
 
-    const { id } = req.params;
+    const { id,username } = req.params;
 
     await pool.execute(
       `DELETE FROM users WHERE user_id = ?`,
       [id]
     );
+
+    console.log(`User deleted: ID ${id}, Username: ${username}`);
 
     res.json({ message: 'User deleted' });
   } catch (err) {
