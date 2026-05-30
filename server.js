@@ -10,7 +10,8 @@ const xss = require('xss');
 const validator = require('validator');
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
-
+const { Server } = require("socket.io");
+const http = require("http");
 const app = express();
 const PORT = process.env.PORT || 4000;
 
@@ -76,6 +77,8 @@ function validateCredentials(email, password) {
   if (password.length < 8 || password.length > 64) return false;
   return true;
 }
+
+
 
 
 //Upload Configuration for forum attachments (admin only)
@@ -783,7 +786,61 @@ app.get(
 
 
 
-// --- Start server ---
-app.listen(PORT, () => {
-  console.log(`Auth server running on port ${PORT}`);
+
+
+
+const server = http.createServer(app);
+
+const io = new Server(server, {
+  cors: {
+    origin: [
+      "http://192.168.68.56:5173",
+      "http://localhost:5173"
+    ],
+    methods: ["GET", "POST"],
+    credentials: true
+  }
 });
+
+io.on("connection", (socket) => {
+  console.log("connected");
+});
+
+
+//Live Chat Functionality (requires valid JWT)
+
+io.on("connection", (socket) => {
+
+  socket.on("joinTopic", (topicId) => {
+
+    socket.join(
+      `topic_${topicId}`
+    );
+
+  });
+
+  socket.on("chatMessage", (msg) => {
+
+    io.to(
+      `topic_${msg.topicId}`
+    ).emit(
+      "chatMessage",
+      {
+        user: msg.user,
+        message: msg.message,
+        timestamp: Date.now()
+      }
+    );
+
+  });
+
+});
+
+server.listen(3001, "0.0.0.0", () => {
+  console.log("Server running");
+});
+
+// // --- Start server ---
+// app.listen(PORT, () => {
+//   console.log(`Auth server running on port ${PORT}`);
+// });
