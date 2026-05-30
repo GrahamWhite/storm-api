@@ -134,7 +134,20 @@ const loadForums = async () => {
   setForums(res.data);
 };
 
-//  Load topics for a forum
+// Load topics for a forum
+const loadTopics = async (forumId) => {
+  console.log("Loading topics for forum:", forumId);
+
+  const res = await axios.get(
+    `${API}/api/forums/${forumId}/topics`
+  );
+
+  console.log("topics response:", res.data);
+
+  setTopics(res.data);
+};
+
+//  Create topic for a forum
 const createTopic = async () => {
 
   await axios.post(
@@ -459,8 +472,11 @@ const uploadImage = async (file) => {
 
                 <button
                   style={button}
-                  onClick={() =>
+                  
+                  onClick={() => {
+                    setSelectedForum(f.id)
                     loadTopics(f.id)
+                    }
                   }
                 >
                   Open

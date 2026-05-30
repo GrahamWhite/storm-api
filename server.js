@@ -431,6 +431,13 @@ app.post("/api/topics", verifyToken, async (req, res) => {
   try {
     const { forum_id, title } = req.body;
 
+    if (!forum_id || !title) {
+      return res.status(400).json({ error: "Missing forum ID or title" });
+    }
+
+    if (!user.length) {
+      return res.status(401).json({ error: "User not found" });
+    }
     const [user] = await pool.execute(
       "SELECT user_id FROM users WHERE email=?",
       [req.user.email]
@@ -462,9 +469,9 @@ app.get("/api/forums/:id/topics", async (req, res) => {
       t.*,
       u.email
     FROM forum_topics t
-    JOIN users u ON t.user_id = u.user_id
-    WHERE forum_id = ?
-    ORDER BY pinned DESC, created_at DESC
+    LEFT JOIN users u ON t.user_id = u.user_id
+    WHERE t.forum_id = ?
+    ORDER BY t.pinned DESC, t.created_at DESC
     `,
     [req.params.id]
   );
@@ -502,6 +509,14 @@ app.post("/api/posts", verifyToken, async (req, res) => {
   try {
     const { topic_id, message } = req.body;
 
+    if (!topic_id || !message) {
+      return res.status(400).json({ error: "Missing topic or message" });
+    }
+
+    if (!user.length) {
+      return res.status(401).json({ error: "User not found" });
+    }
+    
     const [user] = await pool.execute(
       "SELECT user_id FROM users WHERE email=?",
       [req.user.email]
@@ -526,33 +541,21 @@ app.post("/api/posts", verifyToken, async (req, res) => {
   }
 });
 
-app.delete(
-  "/api/posts/:id",
-  async (req,res) => {
+app.delete("/api/posts/:id", async (req, res) => {
+  try {
+    verifyAdmin(req);
 
-    try {
+    await pool.execute(
+      "DELETE FROM forum_posts WHERE id=?",
+      [req.params.id]
+    );
 
-      verifyAdmin(req);
+    res.json({ message: "Post deleted" });
 
-      await pool.execute(
-        "DELETE FROM forum_posts WHERE id=?",
-        [req.params.id]
-      );
-
-      res.json({
-        message:"Post deleted"
-      });
-
-    } catch(err) {
-
-      res.status(403).json({
-        error: err.message
-      });
-
-    }
-
+  } catch (err) {
+    return res.status(403).json({ error: err.message });
   }
-);
+});
 
 //Get all posts in topic (requires valid JWT)
 app.get("/api/topics/:id/posts", async (req, res) => {
@@ -562,10 +565,9 @@ app.get("/api/topics/:id/posts", async (req, res) => {
       p.*,
       u.email
     FROM forum_posts p
-    JOIN users u
-      ON p.user_id = u.user_id
-    WHERE topic_id = ?
-    ORDER BY created_at ASC
+    LEFT JOIN users u ON p.user_id = u.user_id
+    WHERE p.topic_id = ?
+    ORDER BY p.created_at ASC
     `,
     [req.params.id]
   );
@@ -580,6 +582,9 @@ app.post(
   upload.single("image"),
   async (req,res) => {
 
+    if (!user.length) {
+      return res.status(401).json({ error: "User not found" });
+    }
     const [user] = await pool.execute(
       "SELECT user_id FROM users WHERE email=?",
       [req.user.email]
@@ -623,6 +628,10 @@ app.get(
   "/api/notifications",
   verifyToken,
   async (req,res) => {
+
+    if (!user.length) {
+      return res.status(401).json({ error: "User not found" });
+    }
 
     const [user] = await pool.execute(
       "SELECT user_id FROM users WHERE email=?",
