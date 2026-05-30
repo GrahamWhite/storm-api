@@ -79,3 +79,14 @@ npm install -g pm2
 pm2 start server.js --name moss-api
 pm2 save
 pm2 startup
+
+
+
+
+//CLIENT INSTALLATION 
+
+npm create vite@latest api-client
+cd api-client
+npm install
+npm install axios
+npm run dev

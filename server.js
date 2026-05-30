@@ -44,6 +44,8 @@ const allowedOrigins = [
   'https://flumpy.ca',
   'https://www.flumpy.ca',
   'http://localhost:3000',
+  'http://localhost:5173',
+  'http://192.168.68.56:5173',
   'http://192.168.68.56:3000'
 ];
 
@@ -76,6 +78,26 @@ const transporter = nodemailer.createTransport({
     pass: process.env.SMTP_PASS  // Gmail App Password
   }
 });
+
+function verifyAdmin(req) {
+  const authHeader = req.headers['authorization'] || '';
+  const token = authHeader.split(' ')[1];
+
+  if (!token) throw new Error('No token provided');
+
+  let decoded;
+  try {
+    decoded = jwt.verify(token, process.env.JWT_SECRET);
+  } catch {
+    throw new Error('Invalid token');
+  }
+
+  if (decoded.role !== 'admin') {
+    throw new Error('Not admin');
+  }
+
+  return decoded;
+}
 
 // --- REGISTER (with email verification) ---
 app.post('/api/register', authLimiter, async (req, res) => {
@@ -210,155 +232,61 @@ app.get('/api/protected', (req, res) => {
   });
 });
 
-
+// --- GET ALL USERS (admin only) ---
 app.get('/api/users', async (req, res) => {
   try {
-    const authHeader = req.headers['authorization'] || '';
-    const token = authHeader.split(' ')[1];
-
-    if (!token) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (err) {
-      return res.status(401).json({ error: 'Invalid token' });
-    }
-
-    // 🔐 ROLE CHECK
-    if (decoded.role !== 'admin') {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
+    const decoded = verifyAdmin(req);
 
     const [rows] = await pool.execute(
-      `SELECT user_id, email, role, verified, created_at FROM users`
+      'SELECT user_id, email, role, verified FROM users'
     );
 
     res.json(rows);
-
   } catch (err) {
-    console.error('Get users error:', err);
-    res.status(500).json({ error: 'Server error' });
+    res.status(403).json({ error: err.message });
   }
 });
 
-
-// POST /api/meetings
-app.post('/api/meetings', async (req, res) => {
-  const { title, dateTime, info, location, pictureUrl, latitude, longitude } = req.body;
-
-  if (!title || !dateTime) {
-    return res.status(400).json({ error: 'Title and Date/Time are required' });
-  }
-
+//Update user role and verification status (admin only)
+app.put('/api/users/:id', async (req, res) => {
   try {
-    const [result] = await pool.execute(
-      `INSERT INTO meeting (title, start_time, info, location, picture_url, latitude, longitude) 
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [
-        title,
-        dateTime,
-        info === undefined ? null : info,
-        location === undefined ? null : location,
-        pictureUrl === undefined ? null : pictureUrl,
-        latitude,
-        longitude
-      ]
-    );
+    verifyAdmin(req);
 
-    res.status(201).json({ message: 'Meeting created successfully', meetingId: result.insertId });
-  } catch (err) {
-    console.error('Error inserting meeting:', err);
-    res.status(500).json({ error: 'Database error' });
-  }
-});
+    const { id } = req.params;
+    const { role, verified } = req.body;
 
-
-
-//Select Meetings
-app.get('/api/meetings', async (req, res) => {
-  try {
-    const [rows] = await pool.execute(`
-      SELECT m.meeting_id, m.title, m.start_time, m.info, m.location, m.picture_url,
-             m.latitude, m.longitude,
-             GROUP_CONCAT(u.email) AS users
-      FROM meeting m
-      LEFT JOIN user_meeting um ON m.meeting_id = um.meeting_id
-      LEFT JOIN user u ON um.user_id = u.user_id
-      GROUP BY m.meeting_id
-      ORDER BY m.start_time ASC
-    `);
-
-    // Convert comma-separated user emails to arrays
-    const meetings = rows.map(row => ({
-      ...row,
-      users: row.users ? row.users.split(',') : []
-    }));
-
-    res.json(meetings);
-  } catch (err) {
-    console.error('Error fetching meetings:', err);
-    res.status(500).json({ error: 'Database error' });
-  }
-});
-
-
-// POST /api/meetings/:id/join
-app.post('/api/meetings/:id/join', async (req, res) => {
-  try {
-    const meetingId = req.params.id;
-
-    // TODO: Replace this with real authentication
-    // For now, we’ll assume you get the user’s email from the token
-    const authHeader = req.headers['authorization'] || '';
-    const token = authHeader.split(' ')[1];
-    if (!token) return res.status(401).json({ error: 'Unauthorized' });
-
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (err) {
-      return res.status(401).json({ error: 'Invalid token' });
-    }
-
-    const userEmail = decoded.email;
-
-    // Get user_id
-    const [userRows] = await pool.execute(
-      'SELECT user_id FROM user WHERE email = ?',
-      [userEmail]
-    );
-
-    if (userRows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const userId = userRows[0].user_id;
-
-    // Insert into user_meeting if not already joined
     await pool.execute(
-      'INSERT IGNORE INTO user_meeting (user_id, meeting_id) VALUES (?, ?)',
-      [userId, meetingId]
+      `UPDATE users SET role = ?, verified = ? WHERE user_id = ?`,
+      [role, verified, id]
     );
 
-    // Get meeting title for confirmation
-    const [meetingRows] = await pool.execute(
-      'SELECT title FROM meeting WHERE meeting_id = ?',
-      [meetingId]
-    );
-
-    if (meetingRows.length === 0) {
-      return res.status(404).json({ error: 'Meeting not found' });
-    }
-
-    res.json({ message: 'Joined meeting successfully', title: meetingRows[0].title });
+    res.json({ message: 'User updated' });
   } catch (err) {
-    console.error('Join error:', err);
-    res.status(500).json({ error: 'Database error' });
+    res.status(403).json({ error: err.message });
   }
 });
+
+
+//Delete user (admin only)
+app.delete('/api/users/:id', async (req, res) => {
+  try {
+    verifyAdmin(req);
+
+    const { id } = req.params;
+
+    await pool.execute(
+      `DELETE FROM users WHERE user_id = ?`,
+      [id]
+    );
+
+    res.json({ message: 'User deleted' });
+  } catch (err) {
+    res.status(403).json({ error: err.message });
+  }
+});
+
+
+
 
 
 // --- Start server ---
