@@ -431,31 +431,30 @@ app.post("/api/topics", verifyToken, async (req, res) => {
   try {
     const { forum_id, title } = req.body;
 
-    if (!forum_id || !title) {
-      return res.status(400).json({ error: "Missing forum ID or title" });
-    }
+    // ✅ NEVER call it "user" if you're unsure
+    const authUser = req.user;
 
-    if (!user.length) {
-      return res.status(401).json({ error: "User not found" });
-    }
-    const [user] = await pool.execute(
-      "SELECT user_id FROM users WHERE email=?",
-      [req.user.email]
+    console.log("AUTH USER:", authUser);
+
+    const [rows] = await pool.execute(
+      "SELECT user_id FROM users WHERE email = ?",
+      [authUser.email]
     );
 
+    const userId = rows[0].user_id;
+
     await pool.execute(
-      `INSERT INTO forum_topics
-       (forum_id,user_id,title)
-       VALUES (?,?,?)`,
-      [
-        forum_id,
-        user[0].user_id,
-        title
-      ]
+      `
+      INSERT INTO forum_topics (forum_id, user_id, title)
+      VALUES (?, ?, ?)
+      `,
+      [forum_id, userId, title]
     );
 
     res.json({ message: "Topic created" });
+
   } catch (err) {
+    console.error("TOPIC ERROR:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -513,37 +512,70 @@ app.post("/api/posts", verifyToken, async (req, res) => {
       return res.status(400).json({ error: "Missing topic or message" });
     }
 
-    if (!user.length) {
+    // ✅ get auth user first
+    const authUser = req.user;
+
+    const [rows] = await pool.execute(
+      "SELECT user_id FROM users WHERE email=?",
+      [authUser.email]
+    );
+
+    if (!rows.length) {
       return res.status(401).json({ error: "User not found" });
     }
-    
-    const [user] = await pool.execute(
-      "SELECT user_id FROM users WHERE email=?",
-      [req.user.email]
-    );
+
+    const userId = rows[0].user_id;
 
     await pool.execute(
       `
-      INSERT INTO forum_posts
-      (topic_id,user_id,message)
-      VALUES (?,?,?)
+      INSERT INTO forum_posts (topic_id, user_id, message)
+      VALUES (?, ?, ?)
       `,
       [
         topic_id,
-        user[0].user_id,
+        userId,
         xss(message)
       ]
     );
 
     res.json({ message: "Post created" });
+
   } catch (err) {
+    console.error("POST ERROR:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-app.delete("/api/posts/:id", async (req, res) => {
+app.delete("/api/posts/:id", verifyToken, async (req, res) => {
   try {
-    verifyAdmin(req);
+    const [userRows] = await pool.execute(
+      "SELECT user_id, role FROM users WHERE email=?",
+      [req.user.email]
+    );
+
+    if (!userRows.length) {
+      return res.status(401).json({ error: "User not found" });
+    }
+
+    const user = userRows[0];
+
+    const [postRows] = await pool.execute(
+      "SELECT user_id FROM forum_posts WHERE id=?",
+      [req.params.id]
+    );
+
+    if (!postRows.length) {
+      return res.status(404).json({ error: "Post not found" });
+    }
+
+    const postOwnerId = postRows[0].user_id;
+
+    const isOwner = postOwnerId === user.user_id;
+    const isAdmin = user.role === "admin";
+
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ error: "Not allowed" });
+    }
 
     await pool.execute(
       "DELETE FROM forum_posts WHERE id=?",
@@ -553,7 +585,7 @@ app.delete("/api/posts/:id", async (req, res) => {
     res.json({ message: "Post deleted" });
 
   } catch (err) {
-    return res.status(403).json({ error: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -573,6 +605,51 @@ app.get("/api/topics/:id/posts", async (req, res) => {
   );
 
   res.json(rows);
+});
+
+//Delete topic and all its posts (admin only)
+app.delete("/api/topics/:id", verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // 🔐 get user from JWT middleware
+    const authUser = req.user;
+
+    // 🔎 fetch user role from DB
+    const [rows] = await pool.execute(
+      "SELECT role FROM users WHERE email = ?",
+      [authUser.email]
+    );
+
+    if (!rows.length) {
+      return res.status(401).json({ error: "User not found" });
+    }
+
+    const role = rows[0].role;
+
+    // 🚫 block non-admins
+    if (role !== "admin") {
+      return res.status(403).json({ error: "Admin only action" });
+    }
+
+    // delete posts first
+    await pool.execute(
+      "DELETE FROM forum_posts WHERE topic_id = ?",
+      [id]
+    );
+
+    // delete topic
+    await pool.execute(
+      "DELETE FROM forum_topics WHERE id = ?",
+      [id]
+    );
+
+    res.json({ message: "Topic deleted" });
+
+  } catch (err) {
+    console.error("DELETE TOPIC ERROR:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 //Upload image for forum post (requires valid JWT)

@@ -65,21 +65,7 @@ Login as admin:
 
     mysql -u admin -p
 
-Then run:
-
-    USE default_database;
-
-    CREATE TABLE users (
-        user_id INT AUTO_INCREMENT PRIMARY KEY,
-        email VARCHAR(255) NOT NULL UNIQUE,
-        password_hash VARCHAR(255) NOT NULL,
-        role VARCHAR(50) DEFAULT 'user',
-        verified TINYINT(1) DEFAULT 0,
-        verification_token VARCHAR(255),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-
----
+Then run schema.sql
 
 # 🔐 4. Generate JWT Secret
 

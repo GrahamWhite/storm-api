@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useEffect } from "react";
 import axios from "axios";
 
 const API = "http://192.168.68.56:3001";
@@ -8,6 +9,7 @@ const authHeaders = () => ({
     Authorization: `Bearer ${localStorage.getItem("token")}`,
   },
 });
+
 
 export default function App() {
   const [email, setEmail] = useState("");
@@ -33,6 +35,18 @@ export default function App() {
   const [gallery, setGallery] = useState([]);
   const [activePage, setActivePage] = useState("home");
 
+  useEffect(() => {
+    if (token) getMe();
+    
+    }, [token]);
+
+  useEffect(() => {
+    if (token) {
+      loadForums();
+    }
+  }, [token]);
+
+
   const login = async () => {
     try {
       const res = await axios.post(`${API}/api/auth/login`, {
@@ -42,6 +56,8 @@ export default function App() {
 
       setToken(res.data.token);
       localStorage.setItem("token", res.data.token);
+
+      await getMe();
     } catch (err) {
       alert(err.response?.data?.error || "Login failed");
     }
@@ -150,18 +166,58 @@ const loadTopics = async (forumId) => {
 //  Create topic for a forum
 const createTopic = async () => {
 
-  await axios.post(
-    `${API}/api/topics`,
-    {
-      forum_id: selectedForum,
-      title: topicTitle
-    },
-    authHeaders()
-  );
+  
+  console.log(user);
 
-  setTopicTitle("");
 
-  loadTopics(selectedForum);
+  if (!selectedForum) {
+    alert("Select a forum first");
+    return;
+  }
+
+  if (!topicTitle.trim()) {
+    alert("Topic title cannot be empty");
+    return;
+  }
+
+  try {
+    await axios.post(
+      `${API}/api/topics`,
+      {
+        forum_id: selectedForum,
+        title: topicTitle.trim(),
+      },
+      authHeaders()
+    );
+
+    setTopicTitle("");
+    loadTopics(selectedForum);
+  } catch (err) {
+    console.log("CREATE TOPIC ERROR:", err.response?.data || err.message);
+    alert("Failed to create topic");
+  }
+};
+
+const deleteTopic = async (topicId) => {
+  try {
+    await axios.delete(
+      `${API}/api/topics/${topicId}`,
+      authHeaders()
+    );
+
+    // refresh list
+    loadTopics(selectedForum);
+
+    // if you deleted the active topic, clear posts
+    if (selectedTopic === topicId) {
+      setSelectedTopic(null);
+      setPosts([]);
+    }
+
+  } catch (err) {
+    console.log("DELETE TOPIC ERROR:", err.response?.data || err.message);
+    alert("Failed to delete topic");
+  }
 };
 
 // Load posts for a forum
@@ -178,6 +234,15 @@ const loadPosts = async (topicId) => {
 
 // Create a new post in a topic
 const createPost = async () => {
+  if (!selectedTopic) {
+    alert("Select a topic first");
+    return;
+  }
+
+  if (!postMessage.trim()) {
+    alert("Message cannot be empty");
+    return;
+  }
 
   await axios.post(
     `${API}/api/posts`,
@@ -189,9 +254,29 @@ const createPost = async () => {
   );
 
   setPostMessage("");
-
   loadPosts(selectedTopic);
 };
+
+//Delete a post (If created by the user or if user is admin)
+const deletePost = async (postId) => {
+  try {
+    await axios.delete(
+      `${API}/api/posts/${postId}`,
+      authHeaders()
+    );
+
+    // refresh posts
+    loadPosts(selectedTopic);
+
+  } catch (err) {
+    console.log("DELETE POST ERROR:", err.response?.data || err.message);
+    alert("Failed to delete post");
+  }
+};
+
+
+
+
 
 
 const loadGallery = async () => {
@@ -456,34 +541,25 @@ const uploadImage = async (file) => {
             </button>
 
             {forums.map(f => (
-
               <div
                 key={f.id}
                 style={{
-                  padding:10,
-                  marginTop:10,
-                  background:"#0b1220"
+                  padding: 10,
+                  marginTop: 10,
+                  background: selectedForum === f.id ? "#1f2937" : "#0b1220",
+                  cursor: "pointer",
+                  borderRadius: 8
+                }}
+                onClick={() => {
+                  setSelectedForum(f.id);
+                  setSelectedTopic(null);
+                  setPosts([]);
+                  loadTopics(f.id);
                 }}
               >
-
                 <h3>{f.title}</h3>
-
                 <p>{f.description}</p>
-
-                <button
-                  style={button}
-                  
-                  onClick={() => {
-                    setSelectedForum(f.id)
-                    loadTopics(f.id)
-                    }
-                  }
-                >
-                  Open
-                </button>
-
               </div>
-
             ))}
 
           </div>
@@ -494,6 +570,21 @@ const uploadImage = async (file) => {
           <div style={{ width: 250, background: "#0f172a", borderRadius: 10, padding: 10 }}>
                     <h3>Topics</h3>
 
+                    {selectedForum && (
+                      <div style={{ marginBottom: 10 }}>
+                        <input
+                          style={input}
+                          placeholder="New topic title..."
+                          value={topicTitle}
+                          onChange={(e) => setTopicTitle(e.target.value)}
+                        />
+
+                        <button style={button} onClick={createTopic}>
+                          + Create Topic
+                        </button>
+                      </div>
+                    )}
+
                     {!selectedForum && (
                       <p style={{ opacity: 0.6 }}>Select a forum</p>
                     )}
@@ -501,20 +592,42 @@ const uploadImage = async (file) => {
                     {topics.map(t => (
                       <div
                         key={t.id}
-                        onClick={() => {
-                          setSelectedTopic(t.id);
-                          setPosts([]);
-                          loadPosts(t.id);
-                        }}
                         style={{
                           padding: 10,
                           marginTop: 8,
                           background: selectedTopic === t.id ? "#22c55e" : "#0b1220",
                           borderRadius: 8,
-                          cursor: "pointer"
+                          cursor: "pointer",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center"
                         }}
                       >
-                        # {t.title}
+                        <div
+                          onClick={() => {
+                            setSelectedTopic(t.id);
+                            setPosts([]);
+                            loadPosts(t.id);
+                          }}
+                        >
+                          # {t.title}
+                        </div>
+
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation(); // 🔥 prevents opening topic
+                            deleteTopic(t.id);
+                          }}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            color: "#ef4444",
+                            cursor: "pointer",
+                            fontSize: 16
+                          }}
+                        >
+                          🗑
+                        </button>
                       </div>
                     ))}
                 </div>
@@ -526,26 +639,66 @@ const uploadImage = async (file) => {
   
             <h3>Posts</h3>
 
+            {selectedTopic && (
+            <div style={{ marginBottom: 10 }}>
+              <textarea
+                style={{ ...input, height: 80 }}
+                placeholder="Write a message..."
+                value={postMessage}
+                onChange={(e) => setPostMessage(e.target.value)}
+              />
+
+              <button style={button} onClick={createPost}>
+                Send Post
+              </button>
+            </div>
+            )}
+
             {!selectedTopic && (
               <p style={{ opacity: 0.6 }}>Select a topic</p>
             )}
 
             {/* messages */}
             <div style={{ flex: 1, overflowY: "auto", padding: 10 }}>
-              {posts.map(p => (
-                <div
-                  key={p.id}
-                  style={{
-                    marginBottom: 10,
-                    padding: 10,
-                    background: "#0b1220",
-                    borderRadius: 10
-                  }}
-                >
-                  <div style={{ fontSize: 12, opacity: 0.7 }}>{p.email}</div>
-                  <div>{p.message}</div>
-                </div>
-              ))}
+             
+                {posts.map(p => (
+                  <div
+                    key={p.id}
+                    style={{
+                      marginBottom: 10,
+                      padding: 10,
+                      background: "#0b1220",
+                      borderRadius: 10,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center"
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 12, opacity: 0.7 }}>{p.email}</div>
+                      <div>{p.message}</div>
+                    </div>
+
+                    {/* DELETE BUTTON */}
+                    {(user?.role === "admin" || user?.email === p.email) && (
+                      <button
+                        onClick={() => deletePost(p.id)}
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          color: "#ef4444",
+                          cursor: "pointer",
+                          fontSize: 16
+                        }}
+                        title="Delete post"
+                      >
+                        🗑
+                      </button>
+                    )}
+                  </div>
+                ))}
+           
+              
             </div>
 
           </div>
